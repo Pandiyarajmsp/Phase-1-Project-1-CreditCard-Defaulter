@@ -1,0 +1,40 @@
+bash 1_CreditCard_Defaulter/CreditCardDefault.sh
+
+
+Additional things implemented :
+================================================
+1.Logging and Error handling
+2.Running direct script / running from files (.sh,.sql,.hql)
+3.Pre qa and Post qa validation on sqoop import
+4.end to end automation 
+
+
+Hive Database details :
+======================
+custdb
+
+	cstpstreorder
+	defaulters
+
+insure
+	insurance
+	insuranceorc
+	middlegradeview
+	state_master
+
+
+
+
+Mysql Database details:
+=======================
+
+custdb
+	credits_cst
+	credits_pst
+	custmaster
+	middlegrade
+
+ 
+select * from middlegrade limit 10;
+
+

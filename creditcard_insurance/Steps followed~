@@ -1,0 +1,120 @@
+Steps Followed 
+
+Given My sql data imported -Need to check how to execute the mysql.sql file from linux terminal;
+
+mkdir -p /home/hduser/creditcard_insurance/LogDir
+hadoop fs -mkdir -p /user/hduser/CreditCard_Defaulter_project/
+
+
+
+Table_name="credits_cst"
+sqoop eval --connect jdbc:mysql://inceptez/custdb --username root --password root --query "SELECT count(1) FROM $Table_name " | { tr -cd '[:digit:]' ; echo ; } >/home/hduser/creditcard_insurance/LogDir/cst_count_data.txt
+
+cst_source_Count=$(cat /home/hduser/creditcard_insurance/LogDir/cst_count_data.txt)
+
+if [ $cst_source_Count -ne 0 ] ; then  
+	echo "Source table $Table_name is not empty , so Sqoop will start data import"
+	sqoop import --connect jdbc:mysql://inceptez/custdb --username root --password root --table credits_cst --delete-target-dir --target-dir /user/hduser/CreditCard_Defaulter_project/credits_cst/ --split-by id --m 3 
+  
+	else 
+	echo "Source table $Table_name is  empty , please check with source team or try later"
+fi
+
+cst_Dest_Count=$(hadoop fs -cat /user/hduser/CreditCard_Defaulter_project/credits_cst/* | wc -l)
+if [ $cst_Dest_Count -eq $cst_source_Count ] ; then
+         echo "Source and Destination counts are matching "
+	 else
+	 echo "Source and Destination counts are not matching "
+	 echo $cst_Dest_Count
+	 echo $cst_source_Count
+fi
+
+
+Table_name="credits_pst"
+sqoop eval --connect jdbc:mysql://inceptez/custdb --username root --password root --query "SELECT count(1) FROM $Table_name " | { tr -cd '[:digit:]' ; echo ; } >/home/hduser/creditcard_insurance/LogDir/pst_count_data.txt
+
+pst_source_Count=$(cat /home/hduser/creditcard_insurance/LogDir/pst_count_data.txt)
+
+if [ $pst_source_Count -ne 0 ] ; then  
+	echo "Source table $Table_name is not empty , so Sqoop will start data import"
+	sqoop import --connect jdbc:mysql://inceptez/custdb --username root --password root --table credits_cst --delete-target-dir --target-dir /user/hduser/CreditCard_Defaulter_project/credits_pst/ --split-by id --m 3 
+  
+	else 
+	echo "Source table $Table_name is  empty , please check with source team or try later"
+fi
+
+pst_Dest_Count=$(hadoop fs -cat /user/hduser/CreditCard_Defaulter_project/credits_pst/* | wc -l)
+if [ $pst_Dest_Count -eq $pst_source_Count ] ; then
+         echo "Source and Destination counts are matching "
+	 else
+	 echo "Source and Destination counts are not matching "
+	 echo $pst_Dest_Count
+	 echo $pst_source_Count
+fi
+
+
+hadoop fs -rm -r -f /user/hduser/CreditCard_Defaulter_project/defaultersout/
+hadoop fs -rm -r -f /user/hduser/CreditCard_Defaulter_project/nondefaultersout/
+
+
+
+hive -e "Create temporary table pst (id int,lmt int,sex int,edu int,marital int,age int,pay int,billamt int,defaulter int,issuerid1 int,issuerid2 int,tz string) row format delimited fields terminated by ',';"
+hive -e "load data  inpath '/user/hduser/CreditCard_Defaulter_project/credits_pst/' into table pst;"
+
+
+
+hive -e "Create temporary table cst (id int,lmt int,sex int,edu int,marital int,age int,pay int,billamt int,defaulter int,issuerid1 int,issuerid2 int,tz string) row format delimited fields terminated by ',';"
+hive -e "load data  inpath '/user/hduser/CreditCard_Defaulter_project/credits_pst/' into table cst;"
+
+--------------------------------------------
+
+Create temporary table pst (id int,lmt int,sex int,edu int,marital int,age int,pay int,billamt int,defaulter int,issuerid1 int,issuerid2 int,tz string) row format delimited fields terminated by ',';
+load data  inpath '/user/hduser/CreditCard_Defaulter_project/credits_pst/' into table pst;
+
+Create temporary table cst (id int,lmt int,sex int,edu int,marital int,age int,pay int,billamt int,defaulter int,issuerid1 int,issuerid2 int,tz string) row format delimited fields terminated by ',';
+load data  inpath '/user/hduser/CreditCard_Defaulter_project/credits_pst/' into table cst;
+
+
+drop table if exists cstpstreorder;
+Create  table cstpstreorder (id int,lmt int,sex int,edu int,marital int,age int,pay int,billamt int,defaulter int,issuerid1 int,issuerid2 int,tz string) row format delimited fields terminated by ',';
+
+insert into cstpstreorder  select id,case defaulter when 1 then lmt-(lmt*0.04) else lmt end as newlmt,sex,edu,marital,pay,case defaulter when 1 then billamt+(billamt*0.02) else billamt end as newbillamt ,defaulter ,issuerid1,issuerid2,tz from pst where billamt>0 union all
+select id,case defaulter when 1 then lmt-(lmt*0.04) else lmt end as newlmt,sex,edu,marital,pay,case defaulter when 1 then billamt+(billamt*0.02) else billamt end as newbillamt ,defaulter ,issuerid1,issuerid2,tz from pst where billamt>0;
+
+---------------------------------------
+
+INSERT OVERWRITE DIRECTORY '/user/hduser/CreditCard_Defaulter_project/defaultersout/defaultersout' ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' SELECT * FROM cstpstreorder where defaulter=1; 
+INSERT OVERWRITE DIRECTORY '/user/hduser/CreditCard_Defaulter_project/defaultersout/nondefaultersout' ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' SELECT * FROM cstpstreorder where defaulter=0; 
+
+
+CREATE TABLE defaulters (id int,IssuerId1 int,IssuerId2 int,lmt int,newlmt double,sex int,edu int,marital
+int,pay int,billamt int,newbillamt int,defaulter int)
+row format delimited fields terminated by ','
+LOCATION '/user/hduser/defaultersout';
+
+
+
+hadoop fs -ls /user/hduser/CreditCard_Defaulter_project/credits_cst
+
+ReconCount=$(hadoop fs -cat /user/hduser/CreditCard_Defaulter_project/credits_cst/* | wc -l)
+
+sqoop import --connect jdbc:mysql://inceptez/custdb --username root --password root --table credits_pst
+--delete-target-dir --target-dir /user/hduser/CreditCard_Defaulter_project/credits_pst/ -m 1
+
+
+------------------
+
+Table_name="credits_cst"
+Table_Record_count=$(sqoop eval --connect jdbc:mysql://inceptez/custdb --username root --password root --query "SELECT count(1) FROM $Table_name ")
+echo $Table_Record_count
+
+
+cut -d '|' -f 3 | tr -d ' '
+
+
+Table_name="credits_cst"
+sqoop eval --connect jdbc:mysql://inceptez/custdb --username root --password root --query "SELECT count(1) FROM $Table_name " | cut -d '|' -f 3 | sed -e 's/^ //' | sed -e 's/ $//' >/home/hduser/creditcard_insurance/LogDir/cst_count_data.txt
+
+cst_source_Count=$(cat /home/hduser/creditcard_insurance/LogDir/cst_count_data.txt)
+
+

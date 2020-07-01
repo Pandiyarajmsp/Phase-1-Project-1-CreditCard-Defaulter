@@ -1,0 +1,48 @@
+2020/06/10 06:40:25 creditcard_insurance project data load started Good Luck 
+2020/06/10 06:40:25 Linux : Directory Creation completed 
+2020/06/10 06:40:25 Sqoop : import evaluation started for credits_cst table from Mysql
+2020/06/10 06:40:27 Sqoop : import evaluation completed for credits_cst table from Mysql and found the 5611 records in source 
+2020/06/10 06:40:27 Sqoop : started for credits_cst table from Mysql  
+2020/06/10 06:40:48 Sqoop : import completed successfully
+2020/06/10 06:40:48 Sqoop : import  source and destination Post QA started for credits_cst 
+2020/06/10 06:40:50 Sqoop : import source 5611 and destination 5611 counts are matched  
+2020/06/10 06:40:50 Sqoop : import evaluation started for credits_pst table from Mysql
+2020/06/10 06:40:51 Sqoop : import evaluation completed for credits_pst table from Mysql and found the 4389 records in source 
+2020/06/10 06:40:51 Sqoop : import  started for credits_pst table from Mysql  
+2020/06/10 06:41:12 Sqoop : import completed successfully
+2020/06/10 06:41:12 Sqoop : import  source and destination post QA check started for credits_pst 
+2020/06/10 06:41:13 Sqoop : import source 4389 and destination 4389 counts are matched  
+2020/06/10 06:41:16 Hive  : ELT -Custdb Temp table creation and loading merged data into cstpstreorder where billamt >0 started 
+2020/06/10 06:41:16 Hive  : ELT Temp table creation and loading merged data into cstpstreorder where billamt >0 completed 
+2020/06/10 06:41:16 Hive  : ELT -Insuredb Insure and State master table creation and data load from csv and fixed width file and create defaulter internal table started 
+2020/06/10 06:41:16 Hive  : ELT -Insuredb Insure and State master table creation and data load from csv and fixed width file and create defaulter internal table completed 
+2020/06/10 06:41:16 Hive  : ELT -Insuredb insuranceorc internale table creation started 
+2020/06/10 06:41:16 Hive  : ELT -Insuredb insuranceorc internale table creation completed 
+2020/06/10 06:41:16 Hive  : ELT -Insuredb insuranceorc internale table and middlegradeview creation started 
+2020/06/10 06:41:16 Hive  : ELT -Insuredb insuranceorc internale table and middlegradeview creation completed 
+2020/06/10 06:41:16 Sqoop : Export - started 
+2020/06/10 06:42:09 Sqoop : Export - completed 
+2020/06/10 06:57:27 creditcard_insurance project data load started Good Luck 
+2020/06/10 06:57:27 Linux : Directory Creation completed 
+2020/06/10 06:57:27 Sqoop : import evaluation started for credits_cst table from Mysql
+2020/06/10 06:57:30 Sqoop : import evaluation completed for credits_cst table from Mysql and found the 5611 records in source 
+2020/06/10 06:57:30 Sqoop : started for credits_cst table from Mysql  
+2020/06/10 06:58:09 Sqoop : import completed successfully
+2020/06/10 06:58:09 Sqoop : import  source and destination Post QA started for credits_cst 
+2020/06/10 06:58:11 Sqoop : import source 5611 and destination 5611 counts are matched  
+2020/06/10 06:58:11 Sqoop : import evaluation started for credits_pst table from Mysql
+2020/06/10 06:58:13 Sqoop : import evaluation completed for credits_pst table from Mysql and found the 4389 records in source 
+2020/06/10 06:58:13 Sqoop : import  started for credits_pst table from Mysql  
+2020/06/10 06:58:50 Sqoop : import completed successfully
+2020/06/10 06:58:50 Sqoop : import  source and destination post QA check started for credits_pst 
+2020/06/10 06:58:53 Sqoop : import source 4389 and destination 4389 counts are matched  
+2020/06/10 06:58:59 Hive  : ELT -Custdb Temp table creation and loading merged data into cstpstreorder where billamt >0 started 
+2020/06/10 07:00:41 Hive  : ELT Temp table creation and loading merged data into cstpstreorder where billamt >0 completed 
+2020/06/10 07:00:41 Hive  : ELT -Insuredb Insure and State master table creation and data load from csv and fixed width file and create defaulter internal table started 
+2020/06/10 07:00:50 Hive  : ELT -Insuredb Insure and State master table creation and data load from csv and fixed width file and create defaulter internal table completed 
+2020/06/10 07:00:50 Hive  : ELT -Insuredb insuranceorc internale table creation started 
+2020/06/10 07:01:37 Hive  : ELT -Insuredb insuranceorc internale table creation completed 
+2020/06/10 07:01:37 Hive  : ELT -Insuredb insuranceorc internale table and middlegradeview creation started 
+2020/06/10 07:02:09 Hive  : ELT -Insuredb insuranceorc internale table and middlegradeview creation completed 
+2020/06/10 07:02:09 Sqoop : Export - started 
+2020/06/10 07:02:52 Sqoop : Export - completed 

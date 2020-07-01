@@ -1,0 +1,246 @@
+DataPreparation:
+
+1. Insert into mysql (custmaster data in a table and the credit data into 2 tables of 2 timezones)
+
+Login to Mysql:
+
+sudo service mysqld start
+
+sudo mysql -u root -p
+Password: root
+
+create database if not exists custdb;
+use custdb;
+
+drop table if exists credits_pst;
+drop table if exists credits_cst;
+drop table if exists custmaster;
+
+create table if not exists credits_pst (id integer,lmt integer,sex integer,edu integer,marital integer,age integer,pay integer,billamt integer,defaulter integer,issuerid1 integer,issuerid2 integer,tz varchar(3));
+
+create table if not exists credits_cst (id integer,lmt integer,sex integer,edu integer,marital integer,age integer,pay integer,billamt integer,defaulter integer,issuerid1 integer,issuerid2 integer,tz varchar(3));
+
+create table if not exists custmaster (id integer,fname varchar(100),lname varchar(100),ageval integer,profession varchar(100));
+
+
+source /home/hduser/creditcard_insurance/2_2_creditcard_defaulters_pst
+source /home/hduser/creditcard_insurance/2_creditcard_defaulters_cst
+source /home/hduser/creditcard_insurance/custmaster
+
+
+2. Import the data using sqoop from db into hdfs, creditcard datasets of cst and pst timezones into hdfs.
+
+sqoop import --connect jdbc:mysql://inceptez/custdb --username root --password root --table credits_cst --delete-target-dir --target-dir /user/hduser/credits_cst/ -m 1
+
+sqoop import --connect jdbc:mysql://inceptez/custdb --username root --password root --table credits_pst --delete-target-dir --target-dir /user/hduser/credits_pst/ -m 1
+
+5. merge the 2 dataset using pig and split the defaulters and non-defaulters into 2 data sets and load into hdfs.
+
+hadoop fs -rmr -f /user/hduser/defaultersout/
+hadoop fs -rmr -f /user/hduser/nondefaultersout/
+
+
+mr-jobhistory-daemon.sh start historyserver
+
+pig -x mapreduce
+
+pst = load '/user/hduser/credits_pst/' using PigStorage (',') as (id:int,lmt:int,sex:int,edu:int,marital:int,age:int,pay:int,billamt:int,defaulter:int,issuerid1:int,issuerid2:int,tz:chararray);
+cst = load '/user/hduser/credits_cst/' using PigStorage (',') as(id:int,lmt:int,sex:int,edu:int,marital:int,age:int,pay:int,billamt:int,defaulter:int,issuerid1:int,issuerid2:int,tz:chararray);
+cstpst = UNION cst,pst;
+cstpstreorder = foreach cstpst generate id,issuerid1,issuerid2,lmt,sex,edu,marital,pay,billamt,defaulter;
+cstpstpenality = foreach cstpstreorder generate id,issuerid1,issuerid2,lmt,case defaulter when 1 then lmt-(lmt*.04) else lmt end as newlmt ,sex,edu,marital,pay,billamt,case defaulter when 1 then billamt+(billamt*.02) else billamt end as newbillamt,defaulter;
+SPLIT cstpstpenality into def if defaulter == 1, nondef if defaulter == 0;
+store def into '/user/hduser/defaultersout/' using PigStorage (',');
+store nondef into '/user/hduser/nondefaultersout/' using PigStorage (',');
+
+
+Create a hive table with header line count as 1
+
+hive --service metastore
+
+hive
+
+create database if not exists insure;
+
+use insure;
+
+drop table if exists insurance;
+
+CREATE TABLE insurance (IssuerId1 int,IssuerId2 int,BusinessYear int,StateCode string,SourceName string,NetworkName string,NetworkURL string,RowNumber int,MarketCoverage string,DentalOnlyPlan string) 
+row format delimited fields terminated by ','
+TBLPROPERTIES ("skip.header.line.count"="1");
+
+load data local inpath '/home/hduser/creditcard_insurance/insuranceinfo.csv' into table insurance;
+
+
+Create one more fixed width hive table to load the fixed width states_fixedwidth data.
+
+drop table if exists state_master;
+
+CREATE EXTERNAL TABLE state_master (statecd STRING, statedesc STRING) 
+ROW FORMAT SERDE 'org.apache.hadoop.hive.contrib.serde2.RegexSerDe' 
+WITH SERDEPROPERTIES ("input.regex" = "(.{2})(.{20})" ) 
+LOCATION '/user/hduser/states';
+
+load data local inpath '/home/hduser/creditcard_insurance/states_fixedwidth' overwrite into table state_master;
+
+
+Create a managed table on top of the pig output defaulters dataset
+
+CREATE TABLE defaulters (id int,IssuerId1 int,IssuerId2 int,lmt int,newlmt double,sex int,edu int,marital int,pay int,billamt int,newbillamt int,defaulter int) 
+row format delimited fields terminated by ','
+LOCATION '/user/hduser/defaultersout';
+
+
+create a final managed table in orc and snappy compression and load the above 2 tables joined by applying different functions.
+This table should not allow duplicates when it is empty or if not using overwrite option.
+
+hadoop fs -rmr -f /user/hduser/insuranceorc
+
+drop table if exists insuranceorc;
+
+CREATE TABLE insuranceorc (IssuerId int,BusinessYear int,StateCode string,statedesc string,SourceName string,NetworkName string,NetworkURL string,RowNumber int,MarketCoverage string,DentalOnlyPlan string,id int,lmt int,newlmt int,reduced_lmt int,sex varchar(6),grade varchar(20),marital int,pay int,billamt int,newbillamt int,penality int,defaulter int) 
+row format delimited fields terminated by ','
+stored as orc
+LOCATION '/user/hduser/insuranceorc'
+TBLPROPERTIES ("immutable"="true","orc.compress"="SNAPPY");
+
+insert into table insuranceorc select distinct concat(i.IssuerId1,i.IssuerId2),i.businessyear,i.statecode,s.statedesc as statedesc,i.sourcename,i.networkname,i.networkurl,i.rownumber,i.marketcoverage,i.dentalonlyplan,
+d.id,d.lmt,d.newlmt,d.newlmt-d.lmt as reduced_lmt,case when d.sex=1 then 'male' else 'female' end as sex ,case when d.edu=1 then 'lower grade' when d.edu=2 then 'lower middle grade' when d.edu=3 then 'middle grade' when d.edu=4 then 'higher grade' when d.edu=5 then 'doctrate grade' end as grade ,d.marital,d.pay,d.billamt,d.newbillamt,d.newbillamt-d.billamt as penality,d.defaulter
+from insurance i inner join defaulters d 
+on (i.IssuerId1=d.IssuerId1 and i.IssuerId2=d.IssuerId2)
+inner join state_master s
+on (i.statecode=s.statecd)
+and concat(i.IssuerId1,i.IssuerId2) is not null;
+
+
+Retry running the same query once again and see??
+
+If you get the below error then drop the above table and recreate and insert.
+
+FAILED: SemanticException [Error 10256]: Inserting into a non-empty immutable table is not allowed insuranceorc
+
+convert the above table from managed to external.
+
+
+alter table insuranceorc SET TBLPROPERTIES('EXTERNAL'='TRUE');
+
+
+write common table expression queries in hive
+
+with T1 as ( select max(penality) as penalitymale from insuranceorc where sex='male'),
+T2 as ( select max(penality) as penalityfemale from insuranceorc where sex='female')
+select penalitymale,penalityfemale
+from T1 inner join T2
+ON 1=1;
+
+
+create view in hive to restrict few columns, store queries, and apply some masking on sensitive columns.
+
+drop view if exists middlegradeview;
+
+create view middlegradeview as 
+select issuerid,businessyear,statedesc,sourcename,translate(translate(translate(translate(translate(networkurl,'a','x'),'b','y'),'c','z'),'s','r'),'.com','.aaa') as maskednetworkurl,sex,grade,marital,newbillamt,defaulter 
+from insuranceorc
+where grade='middle grade' 
+and issuerid is not null;
+
+Export the view data into hdfs with comma delimiter, as row format delimited fields terminated by ',' will not work for hdfs export.
+
+insert overwrite directory '/user/hduser/middlegrademaskedout' select concat(issuerid,',',businessyear,',',statedesc,',',sourcename,',',maskednetworkurl,',',sex,',',grade,',',marital,',',newbillamt,',',defaulter) from middlegradeview;
+
+Export the above data into mysql using sqoop
+mysql -u root -p
+password: root
+
+use custdb;
+drop table if exists middlegrade;
+create table middlegrade (issuerid integer,businessyear integer,statedesc varchar(200),sourcename varchar(100),maskednetworkurl varchar(200),sex varchar(10),grade varchar(20),marital varchar(10),newbillamt integer,defaulter varchar(20));
+
+quit;
+
+
+sqoop export --connect jdbc:mysql://localhost/custdb --username root --password root --table middlegrade --export-dir /user/hduser/middlegrademaskedout --fields-terminated-by ',';
+
+
+6. Join insurance and credit card data and load into hbase table created with 2 column families credit and insurance.
+
+Copy the jars to the hive lib directory from hbase
+Add the below line in hive-env.sh to locate hbase lib path as auxiliary hive jar path to use hbase jars
+
+cd /usr/local/hive/conf/
+mv hive-env.sh.template hive-env.sh
+
+vi hive-env.sh
+export HIVE_AUX_JARS_PATH=/usr/local/hbase/lib
+
+Copy the jars to the hive lib directory from hbase
+cp /usr/local/hbase/lib/hbase-common-0.98.4-hadoop2.jar /usr/local/hive/lib/
+cp /usr/local/hbase/lib/zookeeper-3.4.6.jar /usr/local/hive/lib/
+cp /usr/local/hbase/lib/guava-12.0.1.jar /usr/local/hive/lib/
+cp /usr/local/hbase/lib/hbase-protocol-0.98.4-hadoop2.jar /usr/local/hive/lib/
+cp /usr/local/hbase/lib/hbase-server-0.98.4-hadoop2.jar /usr/local/hive/lib/
+
+Start Zookeeper and Hbase:
+
+zkServer.sh start
+start-hbase.sh
+
+
+Import using sqoop from db into hbase custmaster data.
+
+sqoop import --connect jdbc:mysql://inceptez/custdb --username root --password root --table custmaster --hbase-table custmaster --column-family customer --hbase-row-key id -m 1
+
+(OR) --run as a free form query
+
+sqoop import --connect jdbc:mysql://inceptez/custdb --username root --password root --query "select concat(id,'-',ageval) as id ,lname,fname,ageval,profession from custmaster where \$CONDITIONS" --hbase-table custmaster --column-family customer --hbase-row-key id -m 1
+
+
+Exit from hive cli and Relogin to hive
+Include the hive jars in the hive cli
+
+hive>
+use insure;
+add jar /usr/local/hive/lib/hive-hbase-handler-0.14.0.jar;
+add jar /usr/local/hbase/lib/hbase-common-0.98.4-hadoop2.jar;
+add jar /usr/local/hbase/lib/zookeeper-3.4.6.jar;
+add jar /usr/local/hbase/lib/guava-12.0.1.jar;
+add jar /usr/local/hbase/lib/high-scale-lib-1.1.1.jar;
+
+
+Create a hbase handler table in hive using hbase storage handler referring to insurancehive table that will be automatically created in hbase with insurance and credit card column families when we create the below hive table.
+
+drop table if exists insurancehive;
+
+CREATE TABLE insurancehive (idkey int, issuerid int,id int,businessyear int,statedesc string,networkurl string,pay int,defaulter string)
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler' WITH SERDEPROPERTIES ("hbase.columns.mapping" =
+":key,insurance:issuerid,insurance:id,insurance:businessyear,insurance:statedesc,insurance:networkurl,creditcard:pay,creditcard:defaulter")
+TBLPROPERTIES ("hbase.table.name" = "insurancehive", "hbase.mapred.output.outputtable"="insurancehive");
+
+Insert incremental rowkey as the row_key into HBASE.
+
+insert into table insurancehive select row_number() over() as idkey,issuerid,id,businessyear,statedesc,networkurl,pay,defaulter
+from insuranceorc where issuerid is not null;
+
+7. create a phoenix table view on the above hbase table and write some queries.
+
+sqlline.py localhost
+
+drop table if exists insurancehive;
+
+create table insurancehive (idkey integer primary key,insurance.issuerid integer,insurance.id integer,insurance.businessyear integer,insurance.statedesc varchar,insurance.networkurl varchar,creditcard.pay integer,creditcard.defaulter varchar);
+
+
+drop view if exists "insurancehive";
+
+create view "insurancehive" (idkey integer primary key,"insurance"."issuerid" varchar,"insurance"."id" varchar,"insurance"."businessyear" varchar,"insurance"."statedesc" varchar,"insurance"."networkurl" varchar,"creditcard"."pay" decimal,"creditcard"."defaulter" varchar);
+
+drop view if exists "custmaster";
+
+create view "custmaster" (id varchar primary key,"customer"."fname"
+varchar,"customer"."lname" varchar,"customer"."profession" varchar,"customer"."ageval" varchar);
+
+select "custmaster"."profession",sum("insurancehive"."pay"),avg("insurancehive"."pay") 
+from "insurancehive" as i inner join "custmaster" as c 
+on "insurancehive"."id"=c.id
+group by "custmaster"."profession";
